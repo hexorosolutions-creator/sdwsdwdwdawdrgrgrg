@@ -405,12 +405,58 @@ class TransformOperations:
 
         return new_data, inverse, metadata
 
-    # Placeholder implementations for other transform operations
     def dct_transform(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
-        """Discrete cosine transform."""
+        """Discrete cosine transform using scipy."""
+        try:
+            import numpy as np
+            from scipy.fft import dct, idct
+        except ImportError:
+            # Fallback if scipy not available
+            def inverse():
+                raise RuntimeError("DCT transform requires scipy")
+            return binary_data, inverse, {'operation': 'dct_transform', 'bytes_affected': 0, 'reversible': False}
+
+        if len(binary_data) == 0:
+            def inverse():
+                return b''
+            return b'', inverse, {'operation': 'dct_transform', 'bytes_affected': 0, 'reversible': True}
+
+        # Convert bytes to numpy array of floats
+        data = np.frombuffer(binary_data, dtype=np.uint8).astype(np.float32)
+
+        # Apply 1D DCT
+        dct_coefficients = dct(data, type=2, norm='ortho')
+
+        # Convert to bytes with proper scaling
+        # Scale to [0, 255] range and convert to uint8
+        scaled_data = np.clip(dct_coefficients + 128, 0, 255).astype(np.uint8)
+        result = scaled_data.tobytes()
+
+        # Store original shape for inverse
+        original_length = len(data)
+
         def inverse():
-            raise RuntimeError("DCT transform is not reversible")
-        return binary_data, inverse, {'operation': 'dct_transform', 'bytes_affected': 0, 'reversible': False}
+            """Inverse DCT using scipy."""
+            # Convert back to float and un-scale
+            data_float = scaled_data.astype(np.float32) - 128
+
+            # Apply inverse DCT
+            reconstructed = idct(data_float, type=2, norm='ortho')
+
+            # Convert back to uint8
+            reconstructed_bytes = np.clip(reconstructed, 0, 255).astype(np.uint8)
+
+            return reconstructed_bytes.tobytes()
+
+        metadata = {
+            'operation': 'dct_transform',
+            'original_length': original_length,
+            'bytes_affected': len(binary_data),
+            'reversible': True,
+            'coefficients_range': (float(np.min(dct_coefficients)), float(np.max(dct_coefficients)))
+        }
+
+        return result, inverse, metadata
 
     def dwt_transform(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
         """Discrete wavelet transform."""
