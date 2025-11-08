@@ -606,10 +606,158 @@ class TransformOperations:
         return result, inverse, metadata
 
     def huffman_encode(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
-        """Huffman encoding."""
+        """Huffman coding implementation."""
+        if len(binary_data) == 0:
+            def inverse():
+                return b''
+            return b'', inverse, {'operation': 'huffman_encode', 'bytes_affected': 0, 'reversible': True}
+
+        # Count byte frequencies
+        frequency = {}
+        for byte in binary_data:
+            frequency[byte] = frequency.get(byte, 0) + 1
+
+        # Build Huffman tree
+        import heapq
+        heap = []
+
+        # Create leaf nodes
+        for byte, freq in frequency.items():
+            heapq.heappush(heap, (freq, [byte, []]))
+
+        # Build tree by combining smallest frequency nodes
+        while len(heap) > 1:
+            freq1, node1 = heapq.heappop(heap)
+            freq2, node2 = heapq.heappop(heap)
+
+            # Create internal node
+            new_freq = freq1 + freq2
+            new_node = [None, [node1, node2]]  # None for internal nodes
+            heapq.heappush(heap, (new_freq, new_node))
+
+        # Generate codes by traversing tree
+        codes = {}
+        root = heap[0][1] if heap else []
+
+        def generate_codes(node, code):
+            if node is None:
+                return
+
+            if len(node) == 2 and node[0] is not None:
+                # Leaf node
+                codes[node[0]] = code
+            elif len(node) == 2 and node[1]:
+                # Internal node
+                generate_codes(node[1][0], code + '0') if len(node[1]) > 0 else None
+                generate_codes(node[1][1], code + '1') if len(node[1]) > 1 else None
+
+        generate_codes(root, '')
+
+        # Encode data
+        encoded_bits = []
+        for byte in binary_data:
+            encoded_bits.append(codes[byte])
+
+        encoded_string = ''.join(encoded_bits)
+
+        # Pack bits into bytes
+        encoded_bytes = bytearray()
+        for i in range(0, len(encoded_string), 8):
+            byte_bits = encoded_string[i:i+8]
+            if len(byte_bits) < 8:
+                # Pad final byte
+                byte_bits += '0' * (8 - len(byte_bits))
+            byte_val = int(byte_bits, 2)
+            encoded_bytes.append(byte_val)
+
+        # Store tree structure and padding info for decoding
+        # Simple tree serialization: for each byte, store its code length and code
+        tree_data = bytearray()
+        tree_data.append(len(frequency))  # Number of unique symbols
+
+        for byte, code in sorted(codes.items()):
+            tree_data.append(byte)  # Symbol
+            tree_data.append(len(code))  # Code length
+            # Store code bits (packed)
+            for i in range(0, len(code), 8):
+                code_bits = code[i:i+8]
+                if len(code_bits) < 8:
+                    code_bits += '0' * (8 - len(code_bits))
+                code_byte = int(code_bits, 2)
+                tree_data.append(code_byte)
+
+        # Combine tree data and padding info with encoded data
+        padding_bits = (8 - len(encoded_string) % 8) % 8
+        result = bytes([padding_bits]) + bytes(tree_data) + bytes(encoded_bytes)
+
+        # Store data for inverse
+        original_data = binary_data
+        symbol_count = len(frequency)
+        tree_info = {'codes': codes, 'symbol_count': symbol_count, 'padding_bits': padding_bits}
+
         def inverse():
-            raise RuntimeError("Huffman encoding is not reversible")
-        return binary_data, inverse, {'operation': 'huffman_encode', 'bytes_affected': 0, 'reversible': False}
+            """Huffman decoding."""
+            if len(result) < 2:
+                return b''
+
+            # Extract padding bits
+            padding_bits = result[0]
+            pos = 1
+
+            # Extract tree data
+            symbol_count = result[pos]
+            pos += 1
+
+            codes = {}
+            for _ in range(symbol_count):
+                symbol = result[pos]
+                pos += 1
+                code_length = result[pos]
+                pos += 1
+
+                # Extract code bits
+                code_bytes_needed = (code_length + 7) // 8
+                code_bits = ''
+                for i in range(code_bytes_needed):
+                    byte_val = result[pos]
+                    pos += 1
+                    code_bits += format(byte_val, '08b')[:code_length - len(code_bits)]
+
+                codes[symbol] = code_bits
+
+            # Build reverse mapping for decoding
+            code_to_symbol = {code: symbol for symbol, code in codes.items()}
+
+            # Extract encoded data
+            encoded_data = result[pos:]
+
+            # Convert to bits and remove padding
+            encoded_bits = ''.join(format(byte, '08b') for byte in encoded_data)
+            encoded_bits = encoded_bits[:-padding_bits] if padding_bits > 0 else encoded_bits
+
+            # Decode
+            decoded_bytes = bytearray()
+            current_code = ''
+
+            for bit in encoded_bits:
+                current_code += bit
+                if current_code in code_to_symbol:
+                    decoded_bytes.append(code_to_symbol[current_code])
+                    current_code = ''
+
+            return bytes(decoded_bytes)
+
+        metadata = {
+            'operation': 'huffman_encode',
+            'original_size': len(binary_data),
+            'compressed_size': len(result),
+            'compression_ratio': len(result) / len(binary_data) if len(binary_data) > 0 else 1.0,
+            'symbol_count': symbol_count,
+            'bytes_affected': len(binary_data),
+            'reversible': True
+        }
+
+        return result, inverse, metadata
 
     def run_length_encode(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
         """Run-length encoding."""
