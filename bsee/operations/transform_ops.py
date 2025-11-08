@@ -840,10 +840,127 @@ class TransformOperations:
         return binary_data, inverse, {'operation': 'arithmetic_encode', 'bytes_affected': 0, 'reversible': False}
 
     def lz77_encode(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
-        """LZ77 encoding."""
+        """LZ77 compression with sliding window and look-ahead buffer."""
+        if len(binary_data) == 0:
+            def inverse():
+                return b''
+            return b'', inverse, {'operation': 'lz77_encode', 'bytes_affected': 0, 'reversible': True}
+
+        # LZ77 parameters
+        window_size = 32768    # Sliding window size (32K)
+        look_ahead_size = 258  # Maximum match length
+        min_match_length = 3    # Minimum match length to encode
+
+        encoded = bytearray()
+
+        # Position in input data
+        pos = 0
+        data = binary_data
+
+        while pos < len(data):
+            # Find longest match in sliding window
+            match_length = 0
+            match_offset = 0
+
+            # Search in window
+            search_start = max(0, pos - window_size)
+            search_end = pos
+
+            for i in range(search_start, search_end):
+                # Try to match starting at position i
+                potential_length = 0
+                max_possible_match = min(len(data) - i, look_ahead_size)
+
+                while (potential_length < max_possible_match and
+                       i + potential_length < len(data) and
+                       pos + potential_length < len(data) and
+                       data[i + potential_length] == data[pos + potential_length]):
+                    potential_length += 1
+
+                if potential_length > match_length and potential_length >= min_match_length:
+                    match_length = potential_length
+                    match_offset = pos - i
+
+                    if match_length == look_ahead_size:  # Found maximum possible match
+                        break
+
+            if match_length >= min_match_length:
+                # Encode as (length, offset) pair
+                # Use 2 bytes for length and 2 bytes for offset
+                encoded.append(0)  # Marker for length-offset pair
+                encoded.append(match_length)
+                encoded.extend(match_offset.to_bytes(2, 'big'))
+
+                pos += match_length
+            else:
+                # Encode literal byte
+                if data[pos] == 0:  # Escape literal 0
+                    encoded.append(0)  # Escape marker
+                    encoded.append(0)  # Literal 0
+                else:
+                    encoded.append(data[pos])
+                pos += 1
+
+        result = bytes(encoded)
+
         def inverse():
-            raise RuntimeError("LZ77 encoding is not reversible")
-        return binary_data, inverse, {'operation': 'lz77_encode', 'bytes_affected': 0, 'reversible': False}
+            """LZ77 decompression."""
+            if len(result) == 0:
+                return b''
+
+            decoded = bytearray()
+            i = 0
+
+            while i < len(result):
+                if result[i] == 0:
+                    # This could be a length-offset pair or escaped literal 0
+                    if i + 1 >= len(result):
+                        break
+
+                    if result[i + 1] == 0 and i + 2 < len(result):
+                        # Escaped literal 0
+                        decoded.append(0)
+                        i += 3
+                    elif i + 3 < len(result):
+                        # Length-offset pair
+                        length = result[i + 1]
+                        offset = int.from_bytes(result[i + 2:i + 4], 'big')
+
+                        # Copy from decoded data
+                        start_pos = len(decoded) - offset
+                        for j in range(length):
+                            if start_pos + j < len(decoded):
+                                decoded.append(decoded[start_pos + j])
+                            else:
+                                # Handle edge case (shouldn't happen with proper encoding)
+                                decoded.append(0)
+
+                        i += 4
+                    else:
+                        # Incomplete sequence
+                        break
+                else:
+                    # Literal byte
+                    decoded.append(result[i])
+                    i += 1
+
+            return bytes(decoded)
+
+        # Calculate compression statistics
+        compression_ratio = len(result) / len(binary_data) if len(binary_data) > 0 else 1.0
+
+        metadata = {
+            'operation': 'lz77_encode',
+            'original_size': len(binary_data),
+            'compressed_size': len(result),
+            'compression_ratio': compression_ratio,
+            'window_size': window_size,
+            'look_ahead_size': look_ahead_size,
+            'bytes_affected': len(binary_data),
+            'reversible': True
+        }
+
+        return result, inverse, metadata
 
     def distance_coding(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
         """Distance coding."""
