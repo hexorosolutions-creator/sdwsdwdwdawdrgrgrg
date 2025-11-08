@@ -760,10 +760,78 @@ class TransformOperations:
         return result, inverse, metadata
 
     def run_length_encode(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
-        """Run-length encoding."""
+        """Run-length encoding with configurable run detection."""
+        if len(binary_data) == 0:
+            def inverse():
+                return b''
+            return b'', inverse, {'operation': 'run_length_encode', 'bytes_affected': 0, 'reversible': True}
+
+        # Run-length encode: replace consecutive identical bytes with (count, byte) pairs
+        encoded = bytearray()
+        max_run_length = 255  # Maximum run length to prevent expansion attacks
+
+        i = 0
+        while i < len(binary_data):
+            current_byte = binary_data[i]
+            run_length = 1
+
+            # Count consecutive identical bytes
+            while (i + run_length < len(binary_data) and
+                   binary_data[i + run_length] == current_byte and
+                   run_length < max_run_length):
+                run_length += 1
+
+            # Only encode as run if length > 1 or it's a single byte
+            if run_length > 1:
+                # Use run encoding
+                encoded.append(run_length)
+                encoded.append(current_byte)
+            else:
+                # Single byte - could use special marker, but for simplicity use run length 1
+                encoded.append(1)
+                encoded.append(current_byte)
+
+            i += run_length
+
+        result = bytes(encoded)
+
         def inverse():
-            raise RuntimeError("Run-length encoding is not reversible")
-        return binary_data, inverse, {'operation': 'run_length_encode', 'bytes_affected': 0, 'reversible': False}
+            """Run-length decode."""
+            if len(result) == 0:
+                return b''
+
+            decoded = bytearray()
+            i = 0
+
+            while i < len(result):
+                if i + 1 >= len(result):
+                    # Incomplete run-length pair
+                    break
+
+                run_length = result[i]
+                byte_value = result[i + 1]
+
+                # Add repeated bytes
+                decoded.extend([byte_value] * run_length)
+
+                i += 2
+
+            return bytes(decoded)
+
+        # Calculate compression statistics
+        compression_ratio = len(result) / len(binary_data) if len(binary_data) > 0 else 1.0
+
+        metadata = {
+            'operation': 'run_length_encode',
+            'original_size': len(binary_data),
+            'compressed_size': len(result),
+            'compression_ratio': compression_ratio,
+            'max_run_length': max_run_length,
+            'bytes_affected': len(binary_data),
+            'reversible': True
+        }
+
+        return result, inverse, metadata
 
     def arithmetic_encode(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
         """Arithmetic encoding."""
