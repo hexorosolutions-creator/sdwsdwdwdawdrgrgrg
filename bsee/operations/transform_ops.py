@@ -77,7 +77,10 @@ class TransformOperations:
                 'description': 'Discrete cosine transform',
                 'required_params': [],
                 'optional_params': {},
-                'reversible': False
+                'reversible': True,
+                'parameters': {
+                    'type': 'auto'
+                }
             },
             'dwt_transform': {
                 'category': 'transform',
