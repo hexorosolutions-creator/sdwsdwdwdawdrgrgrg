@@ -30,7 +30,33 @@ class BaseStrategy(ABC):
         Returns:
             Tuple of (operation_name, operation_parameters)
         """
+        try:
+            return self._propose_impl(current_state)
+        except Exception as e:
+            context = ErrorContext(
+                component=self.name,
+                operation="propose",
+                iteration=self.iteration_count,
+                state_score=current_state.score,
+                additional_info={'strategy_config': self.config}
+            )
+
+            if handle_exception(e, context):
+                # Recovery successful, use fallback
+                return self._fallback_proposal(current_state)
+            else:
+                # Recovery failed, re-raise
+                raise
+
+    @abstractmethod
+    def _propose_impl(self, current_state: State) -> Tuple[str, Dict[str, Any]]:
+        """Implementation of propose method to be overridden by subclasses."""
         pass
+
+    def _fallback_proposal(self, current_state: State) -> Tuple[str, Dict[str, Any]]:
+        """Fallback proposal when main propose method fails."""
+        # Simple fallback: return a basic operation
+        return ('xor_constant', {'constant': 1})
 
     @abstractmethod
     def accept(self, new_state: State) -> bool:
