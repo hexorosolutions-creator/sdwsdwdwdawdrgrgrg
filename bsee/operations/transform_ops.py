@@ -114,7 +114,10 @@ class TransformOperations:
                 'description': 'Huffman encoding',
                 'required_params': [],
                 'optional_params': {},
-                'reversible': False
+                'reversible': True,
+                'parameters': {
+                    'type': 'auto'
+                }
             },
             'run_length_encode': {
                 'category': 'transform',
