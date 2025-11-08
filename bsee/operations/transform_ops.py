@@ -459,10 +459,76 @@ class TransformOperations:
         return result, inverse, metadata
 
     def dwt_transform(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
-        """Discrete wavelet transform."""
+        """Discrete wavelet transform using pywavelets."""
+        try:
+            import numpy as np
+            import pywt
+        except ImportError:
+            # Fallback if pywavelets not available
+            def inverse():
+                raise RuntimeError("DWT transform requires pywavelets")
+            return binary_data, inverse, {'operation': 'dwt_transform', 'bytes_affected': 0, 'reversible': False}
+
+        if len(binary_data) < 2:
+            def inverse():
+                return binary_data
+            return binary_data, inverse, {'operation': 'dwt_transform', 'bytes_affected': 0, 'reversible': True}
+
+        # Convert bytes to numpy array
+        data = np.frombuffer(binary_data, dtype=np.uint8).astype(np.float32)
+
+        # Pad to power of 2 for wavelet transform
+        original_length = len(data)
+        padded_length = 2 ** ((original_length - 1).bit_length())
+        if padded_length > original_length:
+            data = np.pad(data, (0, padded_length - original_length), 'edge')
+
+        # Choose wavelet (haar is most common and doesn't require additional parameters)
+        wavelet = 'haar'
+
+        # Apply single-level DWT
+        coeffs = pywt.dwt(data, wavelet, mode='symmetric')
+
+        # Combine approximation and detail coefficients
+        combined = np.concatenate(coeffs)
+
+        # Scale to [0, 255] range for byte storage
+        min_val, max_val = np.min(combined), np.max(combined)
+        if max_val > min_val:
+            scaled_data = 255 * (combined - min_val) / (max_val - min_val)
+        else:
+            scaled_data = combined
+
+        result = np.clip(scaled_data, 0, 255).astype(np.uint8).tobytes()
+
         def inverse():
-            raise RuntimeError("DWT transform is not reversible")
-        return binary_data, inverse, {'operation': 'dwt_transform', 'bytes_affected': 0, 'reversible': False}
+            """Inverse DWT using pywavelets."""
+            # Convert back to float and un-scale
+            data_float = combined  # Use the combined coefficients directly
+
+            # Split back into approximation and detail coefficients
+            mid_point = len(data_float) // 2
+            approx_coeffs = data_float[:mid_point]
+            detail_coeffs = data_float[mid_point:]
+
+            # Apply inverse DWT
+            reconstructed = pywt.idwt((approx_coeffs, detail_coeffs), wavelet, mode='symmetric')
+
+            # Convert back to uint8 and remove padding
+            reconstructed_bytes = np.clip(reconstructed, 0, 255).astype(np.uint8)
+            return reconstructed_bytes[:original_length].tobytes()
+
+        metadata = {
+            'operation': 'dwt_transform',
+            'wavelet': wavelet,
+            'original_length': original_length,
+            'padded_length': padded_length,
+            'bytes_affected': len(binary_data),
+            'reversible': True,
+            'coefficients_range': (min_val, max_val)
+        }
+
+        return result, inverse, metadata
 
     def fft_transform(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
         """Fast Fourier transform."""
