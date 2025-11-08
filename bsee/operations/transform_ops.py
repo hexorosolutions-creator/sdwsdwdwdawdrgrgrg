@@ -141,7 +141,10 @@ class TransformOperations:
                 'description': 'LZ77 encoding',
                 'required_params': [],
                 'optional_params': {},
-                'reversible': False
+                'reversible': True,
+                'parameters': {
+                    'type': 'auto'
+                }
             },
             'move_to_front': {
                 'category': 'transform',
