@@ -97,7 +97,10 @@ class TransformOperations:
                 'description': 'Fast Fourier transform',
                 'required_params': [],
                 'optional_params': {},
-                'reversible': False
+                'reversible': True,
+                'parameters': {
+                    'type': 'auto'
+                }
             },
             'walsh_hadamard': {
                 'category': 'transform',
