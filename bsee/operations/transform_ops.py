@@ -87,7 +87,10 @@ class TransformOperations:
                 'description': 'Discrete wavelet transform',
                 'required_params': [],
                 'optional_params': {},
-                'reversible': False
+                'reversible': True,
+                'parameters': {
+                    'type': 'auto'
+                }
             },
             'fft_transform': {
                 'category': 'transform',
