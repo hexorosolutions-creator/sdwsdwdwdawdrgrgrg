@@ -12,6 +12,46 @@ from bsee.strategies.base_strategy import BaseStrategy
 from bsee.engine.state import State
 
 
+class BeamState:
+    """Represents a state in the beam search."""
+
+    def __init__(self, state: State, operations_applied: List[Tuple[str, Dict[str, Any]]], score: float):
+        """Initialize a beam state."""
+        self.state = state
+        self.operations_applied = operations_applied.copy()
+        self.score = score
+        self.age = 0
+        self.diversity_score = 0.0
+
+    def __lt__(self, other):
+        """Less-than comparison for sorting."""
+        return self.score > other.score  # Higher scores are better
+
+    def copy(self) -> 'BeamState':
+        """Create a copy of this beam state."""
+        return BeamState(
+            copy.deepcopy(self.state),
+            self.operations_applied.copy(),
+            self.score
+        )
+
+    def calculate_diversity(self, other_states: List['BeamState']) -> float:
+        """Calculate diversity score compared to other states."""
+        if not other_states:
+            return 1.0
+
+        diversity_scores = []
+        for other in other_states:
+            if other is not self:
+                # Simple diversity based on operation sequence difference
+                ops_diff = len(set(self.operations_applied) - set(other.operations_applied))
+                max_ops = max(len(self.operations_applied), len(other.operations_applied))
+                diversity = ops_diff / max(1, max_ops)
+                diversity_scores.append(diversity)
+
+        return sum(diversity_scores) / len(diversity_scores) if diversity_scores else 0.0
+
+
 class BeamStrategy(BaseStrategy):
     """Beam search strategy that maintains multiple candidate states."""
 
