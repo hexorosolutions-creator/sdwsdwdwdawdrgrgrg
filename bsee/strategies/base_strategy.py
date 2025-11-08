@@ -5,6 +5,7 @@ Base strategy interface for BSEE search strategies.
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple
 from bsee.engine.state import State
+from bsee.utils.error_handler import handle_exception, ErrorContext
 
 
 class BaseStrategy(ABC):
