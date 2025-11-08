@@ -124,7 +124,10 @@ class TransformOperations:
                 'description': 'Run-length encoding',
                 'required_params': [],
                 'optional_params': {},
-                'reversible': False
+                'reversible': True,
+                'parameters': {
+                    'type': 'auto'
+                }
             },
             'arithmetic_encode': {
                 'category': 'transform',
