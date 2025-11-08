@@ -531,10 +531,79 @@ class TransformOperations:
         return result, inverse, metadata
 
     def fft_transform(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
-        """Fast Fourier transform."""
+        """Fast Fourier transform using numpy.fft."""
+        try:
+            import numpy as np
+        except ImportError:
+            # Fallback if numpy not available
+            def inverse():
+                raise RuntimeError("FFT transform requires numpy")
+            return binary_data, inverse, {'operation': 'fft_transform', 'bytes_affected': 0, 'reversible': False}
+
+        if len(binary_data) == 0:
+            def inverse():
+                return b''
+            return b'', inverse, {'operation': 'fft_transform', 'bytes_affected': 0, 'reversible': True}
+
+        # Convert bytes to numpy array of floats
+        data = np.frombuffer(binary_data, dtype=np.uint8).astype(np.float32)
+
+        # Apply FFT
+        fft_coefficients = np.fft.fft(data)
+
+        # Get magnitude and phase
+        magnitudes = np.abs(fft_coefficients)
+        phases = np.angle(fft_coefficients)
+
+        # Convert to bytes - store magnitudes first, then phases
+        # Scale both to [0, 255] range
+        mag_scaled = np.clip(255 * magnitudes / np.max(magnitudes) if np.max(magnitudes) > 0 else magnitudes, 0, 255).astype(np.uint8)
+
+        # Scale phases from [-π, π] to [0, 255]
+        phase_scaled = np.clip(255 * (phases + np.pi) / (2 * np.pi), 0, 255).astype(np.uint8)
+
+        # Interleave magnitude and phase data
+        combined = np.empty(mag_scaled.size + phase_scaled.size, dtype=np.uint8)
+        combined[0::2] = mag_scaled
+        combined[1::2] = phase_scaled
+
+        result = combined.tobytes()
+
+        # Store original data for inverse
+        original_length = len(data)
+        max_magnitude = float(np.max(magnitudes))
+
         def inverse():
-            raise RuntimeError("FFT transform is not reversible")
-        return binary_data, inverse, {'operation': 'fft_transform', 'bytes_affected': 0, 'reversible': False}
+            """Inverse FFT using numpy.fft."""
+            # Extract magnitudes and phases
+            mag_extracted = combined[0::2].astype(np.float32)
+            phase_extracted = combined[1::2].astype(np.float32)
+
+            # Un-scale
+            mag_unscaled = mag_extracted * max_magnitude / 255.0
+            phase_unscaled = phase_extracted * (2 * np.pi) / 255.0 - np.pi
+
+            # Reconstruct complex FFT coefficients
+            fft_reconstructed = mag_unscaled * np.exp(1j * phase_unscaled)
+
+            # Apply inverse FFT
+            reconstructed = np.fft.ifft(fft_reconstructed)
+
+            # Convert back to uint8
+            reconstructed_bytes = np.clip(reconstructed.real, 0, 255).astype(np.uint8)
+
+            return reconstructed_bytes.tobytes()
+
+        metadata = {
+            'operation': 'fft_transform',
+            'original_length': original_length,
+            'bytes_affected': len(binary_data),
+            'reversible': True,
+            'max_magnitude': max_magnitude,
+            'frequency_components': len(fft_coefficients)
+        }
+
+        return result, inverse, metadata
 
     def huffman_encode(self, binary_data: bytes) -> Tuple[bytes, Callable, Dict]:
         """Huffman encoding."""
